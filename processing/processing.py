@@ -17,6 +17,9 @@ import spacy
 import logging
 logging.basicConfig(filename='info.log', level=logging.INFO)
 
+from tqdm import tqdm 
+tqdm.pandas()
+
 class MorphTagger():
     
     """
@@ -76,7 +79,7 @@ class LinearRules():
             return None
         
         # remove negatively polarized items
-        lemmatize = lambda token: token.lemma_ if token.lemma_ not in self.neg_markers else None
+        lemmatize = lambda token: token.text if token.lemma_ not in self.neg_markers else None
         lm_sent = [lemmatize(token) for token in tg_sent if lemmatize(token)]
         
         # calculate position (move if falls onto punctuation or newline)
@@ -142,7 +145,7 @@ class LinearRules():
         
 def process_text(text, f):
     
-    res = []
+    res = ''
     # tokenize into sents
     sents = sent_tokenize(text)
     # split headers from body text
@@ -150,7 +153,7 @@ def process_text(text, f):
     for sent in sents:
         tr_sent = f(sent)
         if tr_sent:
-            res.append(tr_sent)
+            res += tr_sent + '\n'
             
     # only return contentful results
     if res != []:
@@ -158,14 +161,19 @@ def process_text(text, f):
     else: 
         return None
     
-def process_file(fn, func, output_path):
+def process_file(fn, output_path, rules):
     
     data = pd.read_parquet(fn)
-    processed_text = data['text'].progress_apply(lambda x: process_text(x, func))
+    processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.shift_past) 
+                                                 if process_text(x, rules.shift_past) else x)
+    processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.shift_negation) 
+                                                 if process_text(x, rules.shift_negation) else x)
+    processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.question_reverse) 
+                                                 if process_text(x, rules.question_reverse) else x)
     pd.DataFrame({
-        func.__name__: processed_text[~processed_text.isnull()],
-        'text': data['text'][:10_000][~processed_text.isnull()]
-    }).to_parquet(f'{output_path}/{func.__name__}_{fn}.csv')
+        'processed_text': processed_text,
+        'text': data['text']
+    }).to_parquet(f'{output_path}/{func.__name__}_{fn.split('/')[-1]}')
     
 def main():
     
@@ -173,27 +181,27 @@ def main():
     parser.add_argument("data_path", help="path to the wiki dataset", type=str)
     parser.add_argument("output_path", help="path to save output files", type=str)
     parser.add_argument("num_workers", help="number of workers, type 0 for no multiprocessing", type=int, default=0)
-    parser.add_argument("transform", help="transformation to apply", type=str, choices=[
-        'shift_past', 'shift_negation', 'question_reverse'])
+#     parser.add_argument("transform", help="transformation to apply", type=str, choices=[
+#         'shift_past', 'shift_negation', 'question_reverse'])
     args = parser.parse_args()
     
     logging.info('args read')
     
     tagger = MorphTagger('spacy')
     rules = LinearRules(tagger)
-    funcs = {'shift_past': rules.shift_past, 
-             'shift_negation': rules.shift_negation, 
-             'question_reverse': rules.question_reverse}
+#     funcs = {'shift_past': rules.shift_past, 
+#              'shift_negation': rules.shift_negation, 
+#              'question_reverse': rules.question_reverse}
     
     files = list(filter(lambda x: 'parquet' in x, os.listdir(args.data_path)))
     
     if args.num_workers == 0:
         for file in files:
-            process_file(file, func=funcs[args.transform], output_path=args.output_path)
+            process_file(file, output_path=args.output_path, rules=rules)
             logging.info('file processed')
     else:
         with Pool(args.num_workers) as p:
-            p.map(lambda x: process_file(x, func=funcs[args.transform]), files, args.output_path)
+            p.map(lambda x: process_file(file, output_path=args.output_path, rules=rules), files)
     
 if __name__ == "__main__":
     main()
