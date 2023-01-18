@@ -108,6 +108,8 @@ class LinearRules():
         
         # get tagged sentence
         tg_sent = tagger.tag_seq(sent, text_only=False)
+        if len(tg_sent) == 0:
+            return None
         
         # get a mask of past simple tokens
         is_pst_verb = lambda token: str(token.morph) == 'Tense=Past|VerbForm=Fin'
@@ -116,11 +118,14 @@ class LinearRules():
             return None
         
         # calculate position
-        position = min(self.pst_position, len(tg_sent)-1)
-        pst_positions = np.arange(len(tg_sent))[pst_mask]
-        while ((tg_sent[position].pos_ == 'PUNCT') or (tg_sent[position].text == '\n')) \
-            and (position < len(tg_sent)-1):
-            position += 1
+        try:
+            position = min(self.pst_position, len(tg_sent)-1)
+            pst_positions = np.arange(len(tg_sent))[pst_mask]
+            while ((tg_sent[position].pos_ == 'PUNCT') or (tg_sent[position].text == '\n')) \
+                and (position < len(tg_sent)-1):
+                position += 1
+        except:
+            logging.info(f'Problematic sentence for shift_past: {sent}')
                     
         # this function checks whether the token on position is past simple 
         def lemmatize(token):
@@ -166,9 +171,9 @@ def process_file(fn, output_path, rules):
     data = pd.read_parquet(fn)
     processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.shift_past) 
                                                  if process_text(x, rules.shift_past) else x)
-    processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.shift_negation) 
+    processed_text = processed_text.progress_apply(lambda x: process_text(x, rules.shift_negation) 
                                                  if process_text(x, rules.shift_negation) else x)
-    processed_text = data['text'].progress_apply(lambda x: process_text(x, rules.question_reverse) 
+    processed_text = processed_text.progress_apply(lambda x: process_text(x, rules.question_reverse) 
                                                  if process_text(x, rules.question_reverse) else x)
     pd.DataFrame({
         'processed_text': processed_text,
