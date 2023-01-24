@@ -70,7 +70,7 @@ class LinearRules():
     def shift_negation(self, sent, as_list=False):
         
         # get tagged sentence
-        tg_sent = tagger.tag_seq(sent, text_only=False)
+        tg_sent = self.tagger.tag_seq(sent, text_only=False)
         
         # get a mask of all negatively polarized tokens
         is_neg = lambda token: str(token.morph) == 'Polarity=Neg'
@@ -98,7 +98,7 @@ class LinearRules():
     def question_reverse(self, sent):
         if len(sent) >= 1:
             if sent[-1] == '?' and re.match(r'\w', sent):
-                tr_sent = tagger.tag_seq(sent, text_only=True)[-2::-1] + ['?']
+                tr_sent = self.tagger.tag_seq(sent, text_only=True)[-2::-1] + ['?']
                 return ' '.join(tr_sent)
             else:
                 return None
@@ -107,7 +107,7 @@ class LinearRules():
     def shift_past(self, sent, as_list=False):
         
         # get tagged sentence
-        tg_sent = tagger.tag_seq(sent, text_only=False)
+        tg_sent = self.tagger.tag_seq(sent, text_only=False)
         if len(tg_sent) == 0:
             return None
         
@@ -178,7 +178,7 @@ def process_file(fn, output_path, rules):
     pd.DataFrame({
         'processed_text': processed_text,
         'text': data['text']
-    }).to_parquet(f'{output_path}/{func.__name__}_{fn.split('/')[-1]}')
+    }).to_parquet(f"{output_path}/{fn.split('/')[-1]}")
     
 def main():
     
@@ -202,7 +202,7 @@ def main():
     
     if args.num_workers == 0:
         for file in files:
-            process_file(file, output_path=args.output_path, rules=rules)
+            process_file(os.path.join(args.data_path, file), output_path=args.output_path, rules=rules)
             logging.info('file processed')
     else:
         with Pool(args.num_workers) as p:
